@@ -1,6 +1,6 @@
 name: azure_speech_assessment
 description: azure_speech_recognition, and add other pronunciation assessment features.
-version: 0.0.3
+version: 0.0.4
 homepage: https://github.com/yaoshenwang/azure_speech_assessment
 
 environment:

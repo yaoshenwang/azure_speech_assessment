@@ -41,6 +41,14 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         let timeoutMs = args?["timeout"] ?? ""
         print("Called simpleVoicePlus \(speechSubscriptionKey) \(serviceRegion) \(lang) \(timeoutMs)")
         simpleSpeechRecognitionPlus(speechSubscriptionKey: speechSubscriptionKey, serviceRegion: serviceRegion, lang: lang, timeoutMs: timeoutMs)
+    } else if (call.method == "soundRecord") {
+        let speechSubscriptionKey = args?["subscriptionKey"] ?? ""
+        let serviceRegion = args?["region"] ?? ""
+        let lang = args?["language"] ?? ""
+        let timeoutMs = args?["timeout"] ?? ""
+        let path = args?["path"] ?? ""
+        print("Called soundRecord \(speechSubscriptionKey) \(serviceRegion) \(lang) \(timeoutMs) \(path)")
+        soundRecord(speechSubscriptionKey: speechSubscriptionKey, serviceRegion: serviceRegion, lang: lang, timeoutMs: timeoutMs, path: path)
     }
     else {
       result(FlutterMethodNotImplemented)
@@ -205,4 +213,70 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
 
       
     }
+
+
+    public func soundRecord(speechSubscriptionKey : String, serviceRegion : String, lang: String, timeoutMs: String, path: String) {
+      var speechConfig: SPXSpeechConfiguration?
+              do {
+                  try speechConfig = SPXSpeechConfiguration(subscription: speechSubscriptionKey, region: serviceRegion)
+              } catch {
+                  print("error \(error) happened")
+                  speechConfig = nil
+              }
+              speechConfig?.speechRecognitionLanguage = lang
+              speechConfig?.setPropertyTo(timeoutMs, by: SPXPropertyId.speechSegmentationSilenceTimeoutMs)
+            
+            var referenceText: String = "";
+            var pronunciationAssessmentConfig: SPXPronunciationAssessmentConfiguration?
+            do {
+                try pronunciationAssessmentConfig = SPXPronunciationAssessmentConfiguration.init(
+                    referenceText,
+                    gradingSystem: SPXPronunciationAssessmentGradingSystem.hundredMark,
+                    granularity: SPXPronunciationAssessmentGranularity.phoneme,
+                    enableMiscue: true)
+            } catch {
+                print("error \(error) happened")
+                pronunciationAssessmentConfig = nil
+                return
+            }
+
+            pronunciationAssessmentConfig?.phonemeAlphabet = "IPA"
+
+        let audioConfig = SPXAudioConfiguration(wavFileInput:path)!
+
+              let reco = try! SPXSpeechRecognizer(speechConfiguration: speechConfig!, audioConfiguration: audioConfig)
+            
+                try! pronunciationAssessmentConfig?.apply(to: reco)
+
+//               reco.addRecognizingEventHandler() {reco, evt in
+
+//                   print("intermediate recognition result: \(evt.result.text ?? "(no result)")")
+
+//               }
+              
+
+              print("Listening...")
+
+              let result = try! reco.recognizeOnce()
+              print("recognition result: \(result.text ?? "(no result)"), reason: \(result.reason.rawValue)")
+              
+              pronunciationAssessmentConfig?.referenceText = result.text;
+        
+              let pronunciationAssessmentResultJson = result.properties?.getPropertyBy(SPXPropertyId.speechServiceResponseJsonResult)
+              print("pronunciationAssessmentResultJson: \(pronunciationAssessmentResultJson ?? "(no result)")")
+              
+              if result.reason != SPXResultReason.recognizedSpeech {
+                  let cancellationDetails = try! SPXCancellationDetails(fromCanceledRecognitionResult: result)
+                  print("cancelled: \(result.reason), \(cancellationDetails.errorDetails)")
+                  print("Did you set the speech resource key and region values?")
+                  azureChannel.invokeMethod("speech.onFinalResponse", arguments: "")
+              } else {
+                  azureChannel.invokeMethod("speech.onFinalResponse", arguments: result.text)
+                  azureChannel.invokeMethod("speech.onFinalAssessment", arguments: pronunciationAssessmentResultJson)
+              }
+
+
+      
+    }    
 }
+
