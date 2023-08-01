@@ -167,6 +167,19 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
       simpleSpeechRecognitionPlus(speechSubscriptionKey,serviceRegion,lang,timeoutMs);
       result.success(true);
 
+    }else if(call.method == "soundRecord"){
+      //_result = result;
+      var permissionRequestId : Int = 5;
+      var speechSubscriptionKey : String = ""+call.argument("subscriptionKey");
+      var serviceRegion : String= ""+call.argument("region");
+      var lang : String = ""+call.argument("language");
+      var timeoutMs : String = ""+call.argument("timeout");
+      var path : String = ""+call.argument("path");
+      print("soundRecord called");
+
+      soundRecord(speechSubscriptionKey,serviceRegion,lang,timeoutMs,path);
+      result.success(true);
+
     }
     else{
       result.notImplemented()
@@ -599,6 +612,89 @@ fun simpleSpeechRecognitionPlus(speechSubscriptionKey: String, serviceRegion: St
     }
 }
 
+fun soundRecord(speechSubscriptionKey: String, serviceRegion: String, lang: String, timeoutMs: String, path: String) {
+  // 创建用于日志输出的标签
+  val logTag: String = "soundRecord"
+
+  Log.i(logTag, "path:" + path);
+
+  try {
+      // 从麦克风创建 AudioConfig 对象，用于配置语音识别的音频输入
+      var audioInput: AudioConfig = AudioConfig.fromWavFileInput(path);
+
+      // 从 Azure 语音服务订阅密钥和服务区域创建 SpeechConfig 对象，用于配置语音识别的参数
+      var config: SpeechConfig = SpeechConfig.fromSubscription(speechSubscriptionKey, serviceRegion)
+      // 如果 SpeechConfig 对象创建失败，则会抛出异常
+      assert(config != null)
+
+      // 设置语音识别的语言和分段静默超时时间
+      config.speechRecognitionLanguage = lang
+      //config.setProperty(PropertyId.Speech_SegmentationSilenceTimeoutMs, timeoutMs)
+
+      // 从 SpeechConfig 和 AudioConfig 对象创建 SpeechRecognizer 对象，用于执行语音识别操作
+      var reco: SpeechRecognizer = SpeechRecognizer(config, audioInput)
+      // 如果 SpeechRecognizer 对象创建失败，则会抛出异常
+      assert(reco != null)
+
+      val gradingSystem = PronunciationAssessmentGradingSystem.HundredMark
+      val granularity = PronunciationAssessmentGranularity.Phoneme
+      // 创建语音评估对象
+      val pronunciationAssessmentConfig = PronunciationAssessmentConfig("",gradingSystem,granularity,true)
+      pronunciationAssessmentConfig.setPhonemeAlphabet("IPA")
+      // 设置语音评估对象
+      pronunciationAssessmentConfig.applyTo(reco);
+
+      // 调用 recognizeOnceAsync() 方法执行一次语音识别操作，并返回一个 Future<SpeechRecognitionResult> 对象，表示异步操作的结果
+      var task: Future<SpeechRecognitionResult> = reco.recognizeOnceAsync()
+      // 如果异步操作失败，则会抛出异常
+      assert(task != null)
+
+      // 通知 Flutter 界面语音识别已经开始
+      invokeMethod("speech.onRecognitionStarted", null)
+
+
+      // 等待语音识别操作完成，并在语音识别完成后执行回调函数
+      setOnTaskCompletedListener(task, { result ->
+          // 获取语音识别结果
+          val s = result.getText()
+          Log.i(logTag, "Recognizer returned: " + s)
+
+          // 将语音识别结果传递给语音评估对象
+          pronunciationAssessmentConfig.setReferenceText(s)
+
+
+          // 获取语音评估结果
+          var pronunciationAssessmentResultJson = result.getProperties().getProperty(PropertyId.SpeechServiceResponse_JsonResult).toString();
+          //.getProperty(PropertyId.SpeechServiceResponse_JsonResult)
+          Log.i(logTag, "Pronunciation assessment result: " + pronunciationAssessmentResultJson);
+
+          
+          
+          // 如果语音识别成功，则将识别结果传递给 Flutter 界面
+          if (result.getReason() == ResultReason.RecognizedSpeech) {
+              invokeMethod("speech.onFinalResponse", s);
+              invokeMethod("speech.onFinalAssessment", pronunciationAssessmentResultJson);
+          } else {
+              // 如果语音识别失败，则将空字符串传递给 Flutter 界面
+              invokeMethod("speech.onFinalResponse", "failed");
+              invokeMethod("speech.onFinalAssessment", "failed");
+          }
+
+          // 关闭 SpeechRecognizer 对象
+          reco.close()
+          pronunciationAssessmentConfig.close();
+          audioInput.close();
+          config.close();
+
+      })
+
+  } catch (exec: Exception) {
+      // 如果在语音识别过程中发生异常，则将异常信息传递给 Flutter 界面
+      assert(false)
+      invokeMethod("speech.onException", "Exception: " + exec.message)
+
+  }
+}
 
        
 

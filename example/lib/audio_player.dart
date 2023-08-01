@@ -41,6 +41,7 @@ class AudioPlayerState extends State<AudioPlayer> {
 
   Future _sendAudio() async {
     try {
+      print(widget.source);
       AzureSpeechAssessment
           .soundRecord(widget.source); //await platform.invokeMethod('azureVoice');
     } on PlatformException catch (e) {
