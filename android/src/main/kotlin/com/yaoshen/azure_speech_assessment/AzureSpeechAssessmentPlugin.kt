@@ -30,7 +30,7 @@ import android.util.Log;
 import android.text.TextUtils;
 import com.microsoft.cognitiveservices.speech.*
 
-import java.util.concurrent.Semaphore 
+import java.util.concurrent.Semaphore
 
 /** AzureSpeechAssessmentPlugin */
 public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHandler {
@@ -40,10 +40,10 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
   /// when the Flutter Engine is detached from the Activity
   private lateinit var azureChannel : MethodChannel;
   private var microphoneStream : MicrophoneStream? = null;
-  private  lateinit var handler : Handler;
-  var continuousListeningStarted : Boolean = false;
-  lateinit var  reco : SpeechRecognizer;
-  var enableDictation : Boolean = false;
+  private var handler : Handler;
+  private var continuousListeningStarted : Boolean = false;
+  private lateinit var  reco : SpeechRecognizer;
+  private var enableDictation : Boolean = false;
   private fun createMicrophoneStream() : MicrophoneStream{
     if (microphoneStream != null) {
         microphoneStream!!.close();
@@ -54,10 +54,12 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
     return microphoneStream!!;
   }
 
+  private var speakSynthesizer: SpeechSynthesizer? = null;
+
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
     azureChannel = MethodChannel(flutterPluginBinding.getFlutterEngine().getDartExecutor(), "azure_speech_recognition")
     azureChannel.setMethodCallHandler(this);
-    
+
   }
 
   init{
@@ -180,6 +182,21 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
       soundRecord(speechSubscriptionKey,serviceRegion,lang,timeoutMs,path);
       result.success(true);
 
+    }else if(call.method == "speakText"){
+      var permissionRequestId : Int = 5;
+      var text: String = ""+call.argument("text");
+      var speechSubscriptionKey : String = ""+call.argument("subscriptionKey");
+      var serviceRegion : String= ""+call.argument("region");
+      var lang : String = ""+call.argument("language");
+      var voiceName : String = ""+call.argument("voiceName");
+
+
+
+      speakText(text,speechSubscriptionKey,serviceRegion,lang,voiceName);
+      result.success(true);
+    }else if(call.method == "speakStop"){
+      speakStop();
+      result.success(true);
     }
     else{
       result.notImplemented()
@@ -195,10 +212,10 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
 
 
     try{
-      
+
       var audioInput : AudioConfig = AudioConfig.fromStreamInput(createMicrophoneStream());
 
-      var config : SpeechConfig = SpeechConfig.fromSubscription(speechSubscriptionKey, serviceRegion); 
+      var config : SpeechConfig = SpeechConfig.fromSubscription(speechSubscriptionKey, serviceRegion);
       assert(config != null);
 
       config.speechRecognitionLanguage = lang;
@@ -235,16 +252,66 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
     }
   }
 
+  // SpeakStop
+  private fun speakStop() {
+    val logTag = "speakStop"
+    Log.i(logTag, "stop 1")
+
+    speakSynthesizer?.StopSpeakingAsync()
+  }
+
+  // SpeakText
+  private fun speakText(text:String, speechSubscriptionKey:String, serviceRegion:String, lang:String, voiceName:String) {
+    val logTag = "speakText";
+    try{
+      var audioConfig : AudioConfig = AudioConfig.fromDefaultSpeakerOutput();
+
+      var config : SpeechConfig = SpeechConfig.fromSubscription(speechSubscriptionKey, serviceRegion);
+      assert(config != null);
+
+      config.speechSynthesisLanguage = lang;
+      config.speechSynthesisVoiceName = voiceName;
+
+      speakSynthesizer = SpeechSynthesizer(config, audioConfig);
+
+      assert(speakSynthesizer != null);
+
+      invokeMethod("speech.onSpeakStarted",null);
+      Log.i(logTag, "speakText key: $speechSubscriptionKey, region: $serviceRegion, lang: $lang, $text");
+
+      val speakTask = speakSynthesizer?.SpeakTextAsync(text);
+
+      setOnTaskCompletedListener(speakTask as Future<SpeechSynthesisResult>) { result ->
+        if (result.reason == ResultReason.SynthesizingAudioCompleted) {
+          Log.i(logTag, "speakText Completed audioLength:${result.audioLength} audioDuration: ${result.audioDuration}");
+        } else if (result.reason == ResultReason.Canceled) {
+          val cancellationDetails = SpeechSynthesisCancellationDetails.fromResult(result).toString()
+          Log.i(logTag, "speakText Canceled $cancellationDetails");
+        }
+
+        speakSynthesizer?.close()
+        result.close()
+        config.close()
+
+        invokeMethod("speech.onSpeakStopped", null);
+      }
+    }catch(exec:Exception){
+      assert(false);
+      Log.i(logTag, "speakText unexpected ${exec.message}");
+      invokeMethod("speech.onException", "Exception: "+exec.message);
+    }
+  }
+
   // Mic Streaming, it need the additional method implementend to get the data from the async task
   fun micStreamRecognition(speechSubscriptionKey:String,serviceRegion:String,lang:String){
     val logTag : String = "micStream";
 
     try{
-      
+
       var audioInput : AudioConfig = AudioConfig.fromStreamInput(createMicrophoneStream());
 
 
-      var config : SpeechConfig = SpeechConfig.fromSubscription(speechSubscriptionKey, serviceRegion); 
+      var config : SpeechConfig = SpeechConfig.fromSubscription(speechSubscriptionKey, serviceRegion);
       assert(config != null);
 
       config.speechRecognitionLanguage = lang;
@@ -260,8 +327,8 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
         //Log.i(logTag, "Intermediate result received: " + s)
         invokeMethod("speech.onSpeech",s);
       });
-      
-  
+
+
       val task : Future<SpeechRecognitionResult> = reco.recognizeOnceAsync();
 
 
@@ -278,14 +345,12 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
     }
   }
 
-
-
   // stream continuosly until you press the button to stop ! STILL NOT WORKING COMPLETELY
 
   fun micStreamContinuosly(speechSubscriptionKey:String,serviceRegion:String,lang:String){
     val logTag : String = "micStreamContinuos";
-    
-    
+
+
     lateinit var  audioInput : AudioConfig;
     var content :  ArrayList<String> = ArrayList<String>();
 
@@ -306,19 +371,19 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
       }else{
         continuousListeningStarted = false;
       }
-      
+
 
       return;
     }
-    
+
     content.clear();
 
     try{
-      
+
       //audioInput = AudioConfig.fromStreamInput(createMicrophoneStream());
 
 
-      var config : SpeechConfig = SpeechConfig.fromSubscription(speechSubscriptionKey, serviceRegion); 
+      var config : SpeechConfig = SpeechConfig.fromSubscription(speechSubscriptionKey, serviceRegion);
       assert(config != null);
 
       config.speechRecognitionLanguage = lang;
@@ -335,7 +400,7 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
       assert(reco != null);
 
 
-      
+
 
       reco.recognizing.addEventListener({ o, speechRecognitionResultEventArgs->
         val s = speechRecognitionResultEventArgs.getResult().getText()
@@ -351,8 +416,8 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
         Log.i(logTag, "Final result received: " + s)
         invokeMethod("speech.onFinalResponse",s);
       });
-      
-  
+
+
       val _task2 = reco.startContinuousRecognitionAsync();
 
       setOnTaskCompletedListener(_task2, { result ->
@@ -361,7 +426,7 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
 
         //invokeMethod("speech.onStopAvailable",null);
       })
-      
+
 
     }catch(exec:Exception){
       assert(false);
@@ -385,11 +450,11 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
     content.add("");
 
     try{
-       
+
       val audioInput = AudioConfig.fromStreamInput(createMicrophoneStream());
 
 
-      var config : SpeechConfig = SpeechConfig.fromSubscription(speechSubscriptionKey, serviceRegion); 
+      var config : SpeechConfig = SpeechConfig.fromSubscription(speechSubscriptionKey, serviceRegion);
 
       assert(config != null);
 
@@ -406,11 +471,11 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
         Log.i(logTag, "Final result received: " + s)
         invokeMethod("speech.onFinalResponse",TextUtils.join(System.lineSeparator(), content));
       });
-      
-      
+
+
       val task : Future<IntentRecognitionResult> = reco.recognizeOnceAsync();
 
-      
+
 
       setOnTaskCompletedListener(task, { result ->
         Log.i(logTag, "Continuous recognition stopped.");
@@ -420,7 +485,7 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
         if (result.getReason() != ResultReason.RecognizedIntent) {
           var errorDetails = if(result.getReason() == ResultReason.Canceled) CancellationDetails.fromResult(result).getErrorDetails() else "";
           s = "Intent failed with " + result.getReason() + ". Did you enter your Language Understanding subscription?" + System.lineSeparator() + errorDetails;
-        } 
+        }
 
         var intentId = result.getIntentId();
 
@@ -467,19 +532,19 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
 
       return;
     }
-    
+
     content.clear();
     try{
 
       audioInput = AudioConfig.fromStreamInput(createMicrophoneStream());
 
-      var config : SpeechConfig = SpeechConfig.fromSubscription(speechSubscriptionKey, serviceRegion); 
+      var config : SpeechConfig = SpeechConfig.fromSubscription(speechSubscriptionKey, serviceRegion);
 
       assert(config != null);
 
       config.speechRecognitionLanguage = lang;
 
-      reco = SpeechRecognizer(config,audioInput); 
+      reco = SpeechRecognizer(config,audioInput);
 
       reco.recognizing.addEventListener({ o, speechRecognitionResultEventArgs->
         val s = speechRecognitionResultEventArgs.getResult().getText()
@@ -504,11 +569,11 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
           content.add(s);
         invokeMethod("speech.onSpeech",s);
       });
-      
+
       var kwsModel = KeywordRecognitionModel.fromFile(copyAssetToCacheAndGetFilePath(kwsModelFile));
       val task : Future<Void> = reco.startKeywordRecognitionAsync(kwsModel);
 
-      
+
       setOnTaskCompletedListener(task, { result ->
         continuousListeningStarted = true;
 
@@ -520,7 +585,7 @@ public class AzureSpeechAssessmentPlugin: FlutterPlugin, Activity(),MethodCallHa
     }catch(exc:Exception){
 
     }
-  } 
+  }
 
 
     /**
@@ -585,8 +650,8 @@ fun simpleSpeechRecognitionPlus(speechSubscriptionKey: String, serviceRegion: St
             //.getProperty(PropertyId.SpeechServiceResponse_JsonResult)
             Log.i(logTag, "Pronunciation assessment result: " + pronunciationAssessmentResultJson);
 
-            
-            
+
+
             // 如果语音识别成功，则将识别结果传递给 Flutter 界面
             if (result.getReason() == ResultReason.RecognizedSpeech) {
                 invokeMethod("speech.onFinalResponse", s);
@@ -668,8 +733,8 @@ fun soundRecord(speechSubscriptionKey: String, serviceRegion: String, lang: Stri
           //.getProperty(PropertyId.SpeechServiceResponse_JsonResult)
           Log.i(logTag, "Pronunciation assessment result: " + pronunciationAssessmentResultJson);
 
-          
-          
+
+
           // 如果语音识别成功，则将识别结果传递给 Flutter 界面
           if (result.getReason() == ResultReason.RecognizedSpeech) {
               invokeMethod("speech.onFinalResponse", s);
@@ -696,7 +761,7 @@ fun soundRecord(speechSubscriptionKey: String, serviceRegion: String, lang: Stri
   }
 }
 
-       
+
 
 
 
@@ -705,10 +770,10 @@ fun soundRecord(speechSubscriptionKey: String, serviceRegion: String, lang: Stri
 
 
 
-  
-  
+
+
    private fun <T> setOnTaskCompletedListener(task:Future<T>, listener: (T) -> Unit){
-    s_executorService.submit({ 
+    s_executorService.submit({
       val result = task.get()
       listener(result)
     });
@@ -726,7 +791,7 @@ fun soundRecord(speechSubscriptionKey: String, serviceRegion: String, lang: Stri
   private fun invokeMethod(method:String, arguments:Any?){
 
     handler.post{
-        azureChannel.invokeMethod(method,arguments); 
+        azureChannel.invokeMethod(method,arguments);
     }
   }
 

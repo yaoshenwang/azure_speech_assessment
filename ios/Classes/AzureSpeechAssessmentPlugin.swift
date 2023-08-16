@@ -6,6 +6,8 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
   var azureChannel: FlutterMethodChannel
   var continuousListeningStarted: Bool = false
   private var speechRecognizer: SPXSpeechRecognizer?
+    private var speakSynthesizer: SPXSpeechSynthesizer?
+    
   var text = ""
   public static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(name: "azure_speech_recognition", binaryMessenger: registrar.messenger())
@@ -49,6 +51,19 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         let path = args?["path"] ?? ""
         print("Called soundRecord \(speechSubscriptionKey) \(serviceRegion) \(lang) \(timeoutMs) \(path)")
         soundRecord(speechSubscriptionKey: speechSubscriptionKey, serviceRegion: serviceRegion, lang: lang, timeoutMs: timeoutMs, path: path)
+    } else if (call.method == "speakText") {
+        let text = args?["text"] ?? ""
+        let speechSubscriptionKey = args?["subscriptionKey"] ?? ""
+        let serviceRegion = args?["region"] ?? ""
+        let lang = args?["language"] ?? ""
+        let voiceName = args?["voiceName"] ?? ""
+        
+        print("Called speakText \(speechSubscriptionKey) \(serviceRegion) \(lang)")
+        
+        speakText(text: text,speechSubscriptionKey: speechSubscriptionKey,serviceRegion: serviceRegion, lang: lang, voiceName: voiceName);
+    } else if(call.method == "speakStop"){
+        print("Called speakStop")
+        speakStop();
     }
     else {
       result(FlutterMethodNotImplemented)
@@ -84,7 +99,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
 
               if result.reason != SPXResultReason.recognizedSpeech {
                   let cancellationDetails = try! SPXCancellationDetails(fromCanceledRecognitionResult: result)
-                  print("cancelled: \(result.reason), \(cancellationDetails.errorDetails)")
+                  print("cancelled: \(result.reason), \(String(describing: cancellationDetails.errorDetails))")
                   print("Did you set the speech resource key and region values?")
                   azureChannel.invokeMethod("speech.onFinalResponse", arguments: "")
               } else {
@@ -92,6 +107,32 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
               }
       
   }
+    public func speakStop() {
+        try! speakSynthesizer?.stopSpeaking()
+    }
+    
+    public func speakText(text:String, speechSubscriptionKey : String, serviceRegion : String, lang: String, voiceName: String) {
+        var speechConfig: SPXSpeechConfiguration?
+        do {
+            try speechConfig = SPXSpeechConfiguration(subscription: speechSubscriptionKey, region: serviceRegion)
+            // speechConfig!.enableDictation()
+            speechConfig!.speechSynthesisLanguage = lang
+            speechConfig!.speechSynthesisVoiceName = voiceName
+        } catch {
+            print("error \(error) happened")
+            speechConfig = nil
+        }
+        let audioConfig = SPXAudioConfiguration()
+        speakSynthesizer = try! SPXSpeechSynthesizer(speechConfiguration: speechConfig!, audioConfiguration: audioConfig)
+        
+        DispatchQueue.global().async{
+            self.azureChannel.invokeMethod("speech.onSpeakStarted", arguments: "")
+            let result = try! self.speakSynthesizer?.speakText(text)
+            self.azureChannel.invokeMethod("speech.onSpeakStopped", arguments: "")
+        }
+        
+    }
+        
   public func micStreamSpeechRecognition(speechSubscriptionKey : String, serviceRegion : String, lang: String, timeoutMs: String) {
         if continuousListeningStarted == true {
            do {
@@ -146,6 +187,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         do {
             try? speechRecognizer?.startContinuousRecognition()
         } catch {
+            print("error \(error) happened")
         }
     }
 
@@ -213,7 +255,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
 
       
     }
-
+    
 
     public func soundRecord(speechSubscriptionKey : String, serviceRegion : String, lang: String, timeoutMs: String, path: String) {
       var speechConfig: SPXSpeechConfiguration?
