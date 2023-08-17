@@ -269,9 +269,11 @@ public class AzureSpeechAssessmentPlugin : FlutterPlugin, Activity(), MethodCall
   // SpeakStop
   private fun speakStop() {
     val logTag = "speakStop"
-    Log.i(logTag, "stop 1")
-
-    speakSynthesizer?.StopSpeakingAsync()
+    try {
+      speakSynthesizer?.StopSpeakingAsync()
+    } catch (exec: Exception) {
+      // Log.i(logTag, "speakStop ${exec.message}")
+    }
   }
 
   // SpeakText
@@ -297,22 +299,22 @@ public class AzureSpeechAssessmentPlugin : FlutterPlugin, Activity(), MethodCall
       assert(speakSynthesizer != null);
 
       invokeMethod("speech.onSpeakStarted", null);
-      Log.i(
-        logTag,
-        "speakText key: $speechSubscriptionKey, region: $serviceRegion, lang: $lang, $text"
-      );
+      // Log.i(
+      //   logTag,
+      //   "speakText key: $speechSubscriptionKey, region: $serviceRegion, lang: $lang, $text"
+      // );
 
       val speakTask = speakSynthesizer?.SpeakTextAsync(text);
 
       setOnTaskCompletedListener(speakTask as Future<SpeechSynthesisResult>) { result ->
         if (result.reason == ResultReason.SynthesizingAudioCompleted) {
-          Log.i(
-            logTag,
-            "speakText Completed audioLength:${result.audioLength} audioDuration: ${result.audioDuration}"
-          );
+          // Log.i(
+          //   logTag,
+          //   "speakText Completed audioLength:${result.audioLength} audioDuration: ${result.audioDuration}"
+          // );
         } else if (result.reason == ResultReason.Canceled) {
-          val cancellationDetails = SpeechSynthesisCancellationDetails.fromResult(result).toString()
-          Log.i(logTag, "speakText Canceled $cancellationDetails");
+          // val cancellationDetails = SpeechSynthesisCancellationDetails.fromResult(result).toString()
+          // Log.i(logTag, "speakText Canceled $cancellationDetails");
         }
 
         speakSynthesizer?.close()
@@ -323,7 +325,7 @@ public class AzureSpeechAssessmentPlugin : FlutterPlugin, Activity(), MethodCall
       }
     } catch (exec: Exception) {
       assert(false);
-      Log.i(logTag, "speakText unexpected ${exec.message}");
+      // Log.i(logTag, "speakText unexpected ${exec.message}");
       invokeMethod("speech.onException", "Exception: " + exec.message);
     }
   }
