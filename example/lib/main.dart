@@ -110,6 +110,7 @@ class _AudioRecorderState extends State<_AudioRecorder> {
             dir.path,
             'audio_${DateTime.now().millisecondsSinceEpoch}.wav',
           );
+          debugPrint('Audio path: $path');
         }
         await _audioRecorder.start(config, path: path);
 
