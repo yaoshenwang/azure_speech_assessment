@@ -4,12 +4,11 @@ import 'package:flutter/services.dart';
 
 typedef void StringResultHandler(String text);
 
-
-
 class AzureSpeechAssessment {
   Future<String?> getPlatformVersion() {
     return AzureSpeechAssessmentPlatform.instance.getPlatformVersion();
   }
+
   static const MethodChannel _channel =
       const MethodChannel('azure_speech_recognition');
 
@@ -25,6 +24,7 @@ class AzureSpeechAssessment {
   static String? _subKey;
   static String? _region;
   static String _lang = "en-EN";
+  static String _voiceName = "en-US-JennyNeural";
   static String _timeout = "500";
 
   static String? _languageUnderstandingSubscriptionKey;
@@ -34,10 +34,11 @@ class AzureSpeechAssessment {
   /// default intitializer for almost every type except for the intent recognizer.
   /// Default language -> English
   AzureSpeechAssessment.initialize(String subKey, String region,
-      {String? lang, String? timeout}) {
+      {String? lang, String? timeout, String? voiceName}) {
     _subKey = subKey;
     _region = region;
     if (lang != null) _lang = lang;
+    if (voiceName != null) _voiceName = voiceName;
     if (timeout != null) {
       if (int.parse(timeout) >= 100 && int.parse(timeout) <= 5000) {
         _timeout = timeout;
@@ -51,11 +52,12 @@ class AzureSpeechAssessment {
   /// Default language -> English
   AzureSpeechAssessment.initializeLanguageUnderstading(
       String subKey, String region, String appId,
-      {lang}) {
+      {lang, voiceName}) {
     _languageUnderstandingSubscriptionKey = subKey;
     _languageUnderstandingServiceRegion = region;
     _languageUnderstandingAppId = appId;
     if (lang != null) _lang = lang;
+    if (voiceName != null) _voiceName = voiceName;
   }
 
   StringResultHandler? exceptionHandler;
@@ -66,30 +68,42 @@ class AzureSpeechAssessment {
   VoidCallback? startRecognitionHandler;
   VoidCallback? recognitionStoppedHandler;
 
+  VoidCallback? speakStartedHandler;
+  VoidCallback? speakStoppedHandler;
+
   Future _platformCallHandler(MethodCall call) async {
     switch (call.method) {
       case "speech.onRecognitionStarted":
-        recognitionStartedHandler!();
+        if (recognitionStartedHandler != null) recognitionStartedHandler!();
         break;
       case "speech.onSpeech":
-        recognitionResultHandler!(call.arguments);
+        if (recognitionResultHandler != null)
+          recognitionResultHandler!(call.arguments);
         break;
       case "speech.onFinalResponse":
-        finalTranscriptionHandler!(call.arguments);
+        if (finalTranscriptionHandler != null)
+          finalTranscriptionHandler!(call.arguments);
         break;
       case "speech.onFinalAssessment":
-        finalAssessmentHandler!(call.arguments);
+        if (finalAssessmentHandler != null)
+          finalAssessmentHandler!(call.arguments);
         break;
       case "speech.onStartAvailable":
-        startRecognitionHandler!();
+        if (startRecognitionHandler != null) startRecognitionHandler!();
         break;
       case "speech.onRecognitionStopped":
-        recognitionStoppedHandler!();
+        if (recognitionStoppedHandler != null) recognitionStoppedHandler!();
+        break;
+      case "speech.onSpeakStarted":
+        if (speakStartedHandler != null) speakStartedHandler!();
+        break;
+      case "speech.onSpeakStopped":
+        if (speakStoppedHandler != null) speakStoppedHandler!();
         break;
       case "speech.onException":
-        exceptionHandler!(call.arguments);
+        if (exceptionHandler != null) exceptionHandler!(call.arguments);
         break;
-      
+
       default:
         print("Error: method called not found");
     }
@@ -122,6 +136,14 @@ class AzureSpeechAssessment {
   /// only for continuosly
   void setRecognitionStoppedHandler(VoidCallback handler) =>
       recognitionStoppedHandler = handler;
+
+  /// called when the speak is started
+  void setSpeakStartedHandler(VoidCallback handler) =>
+      speakStartedHandler = handler;
+
+  /// called when the speak is started
+  void setSpeakStoppedHandler(VoidCallback handler) =>
+      speakStoppedHandler = handler;
 
   /// Simple voice Recognition, the result will be sent only at the end.
   /// Return the text obtained or the error catched
@@ -176,6 +198,26 @@ class AzureSpeechAssessment {
     } else {
       throw "Error: SpeechRecognitionParameters not initialized correctly";
     }
+  }
+
+  /// Synthesize speech
+  static speakText(String text) {
+    if ((_subKey != null && _region != null)) {
+      _channel.invokeMethod('speakText', {
+        'text': text,
+        'language': _lang,
+        'voiceName': _voiceName,
+        'subscriptionKey': _subKey,
+        'region': _region
+      });
+    } else {
+      throw "Error: SpeechRecognitionParameters not initialized correctly";
+    }
+  }
+
+  /// Synthesize speech stop
+  static speakStop() {
+    _channel.invokeMethod('speakStop');
   }
 
   /// Speech recognition that doesnt stop recording text until you stopped it by calling again this function
