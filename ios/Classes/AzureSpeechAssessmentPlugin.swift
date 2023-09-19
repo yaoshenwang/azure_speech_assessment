@@ -51,6 +51,15 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             let path = args?["path"] ?? ""
             print("Called soundRecord \(speechSubscriptionKey) \(serviceRegion) \(lang) \(timeoutMs) \(path)")
             soundRecord(speechSubscriptionKey: speechSubscriptionKey, serviceRegion: serviceRegion, lang: lang, timeoutMs: timeoutMs, path: path)
+        }else if (call.method == "soundRecordAssessment") {
+            let speechSubscriptionKey = args?["subscriptionKey"] ?? ""
+            let serviceRegion = args?["region"] ?? ""
+            let lang = args?["language"] ?? ""
+            let timeoutMs = args?["timeout"] ?? ""
+            let path = args?["path"] ?? ""
+            let originalText = args?["originalText"] ?? ""
+            print("Called soundRecord \(speechSubscriptionKey) \(serviceRegion) \(lang) \(timeoutMs) \(path) \(originalText)")
+            soundRecordAssessment(speechSubscriptionKey: speechSubscriptionKey, serviceRegion: serviceRegion, lang: lang, timeoutMs: timeoutMs, path: path, originalText: originalText)
         } else if (call.method == "speakText") {
             let text = args?["text"] ?? ""
             let speechSubscriptionKey = args?["subscriptionKey"] ?? ""
@@ -268,7 +277,38 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         speechConfig?.speechRecognitionLanguage = lang
         speechConfig?.setPropertyTo(timeoutMs, by: SPXPropertyId.speechSegmentationSilenceTimeoutMs)
         
-        var referenceText: String = "";
+        let audioConfig = SPXAudioConfiguration(wavFileInput:path)!
+        
+        let reco = try! SPXSpeechRecognizer(speechConfiguration: speechConfig!, audioConfiguration: audioConfig)
+
+        print("Listening...")
+        
+        let result = try! reco.recognizeOnce()
+        print("recognition result: \(result.text ?? "(no result)"), reason: \(result.reason.rawValue)")
+        if result.reason != SPXResultReason.recognizedSpeech {
+            let cancellationDetails = try! SPXCancellationDetails(fromCanceledRecognitionResult: result)
+            print("cancelled: \(result.reason), \(cancellationDetails.errorDetails)")
+            print("Did you set the speech resource key and region values?")
+            azureChannel.invokeMethod("speech.onFinalResponse", arguments: "")
+        } else {
+            azureChannel.invokeMethod("speech.onFinalResponse", arguments: result.text)
+        }
+        
+        
+    }
+
+    public func soundRecordAssessment(speechSubscriptionKey : String, serviceRegion : String, lang: String, timeoutMs: String, path: String , originalText: String) {
+        var speechConfig: SPXSpeechConfiguration?
+        do {
+            try speechConfig = SPXSpeechConfiguration(subscription: speechSubscriptionKey, region: serviceRegion)
+        } catch {
+            print("error \(error) happened")
+            speechConfig = nil
+        }
+        speechConfig?.speechRecognitionLanguage = lang
+        speechConfig?.setPropertyTo(timeoutMs, by: SPXPropertyId.speechSegmentationSilenceTimeoutMs)
+        
+        var referenceText: String = originalText;
         var pronunciationAssessmentConfig: SPXPronunciationAssessmentConfiguration?
         do {
             try pronunciationAssessmentConfig = SPXPronunciationAssessmentConfiguration.init(
@@ -290,19 +330,9 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         
         try! pronunciationAssessmentConfig?.apply(to: reco)
         
-        //               reco.addRecognizingEventHandler() {reco, evt in
-        
-        //                   print("intermediate recognition result: \(evt.result.text ?? "(no result)")")
-        
-        //               }
-        
-        
-        print("Listening...")
+        print("Giving Assessment...")
         
         let result = try! reco.recognizeOnce()
-        print("recognition result: \(result.text ?? "(no result)"), reason: \(result.reason.rawValue)")
-        
-        pronunciationAssessmentConfig?.referenceText = result.text;
         
         let pronunciationAssessmentResultJson = result.properties?.getPropertyBy(SPXPropertyId.speechServiceResponseJsonResult)
         print("pronunciationAssessmentResultJson: \(pronunciationAssessmentResultJson ?? "(no result)")")
@@ -313,10 +343,8 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             print("Did you set the speech resource key and region values?")
             azureChannel.invokeMethod("speech.onFinalResponse", arguments: "")
         } else {
-            azureChannel.invokeMethod("speech.onFinalResponse", arguments: result.text)
             azureChannel.invokeMethod("speech.onFinalAssessment", arguments: pronunciationAssessmentResultJson)
         }
-        
         
         
     }    

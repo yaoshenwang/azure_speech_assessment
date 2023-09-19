@@ -42,10 +42,13 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^2.0.0
-  record: ^5.0.0-beta.2
   path: ^1.8.0
   path_provider: ^2.0.1
-  audioplayers: ^4.1.0
+  flutter_sound_record: ^3.3.2
+  just_audio: ^0.9.35
+  ffmpeg_kit_flutter: ^6.0.2
+
+  
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
