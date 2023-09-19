@@ -2,171 +2,50 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:record/record.dart';
-import 'package:azure_speech_assessment/azure_speech_assessment.dart';
-
+import 'package:flutter_sound_record/flutter_sound_record.dart';
 import '/audio_player.dart';
+import 'package:just_audio/just_audio.dart' as ap;
+import 'package:ffmpeg_kit_flutter/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter/ffmpeg_kit_config.dart';
+import 'package:ffmpeg_kit_flutter/log.dart';
+import 'package:ffmpeg_kit_flutter/return_code.dart';
 
-void main() => runApp(const MyApp());
+class AudioRecorder extends StatefulWidget {
+  const AudioRecorder({required this.onStop, Key? key}) : super(key: key);
 
-class _AudioRecorder extends StatefulWidget {
   final void Function(String path) onStop;
 
-  const _AudioRecorder({Key? key, required this.onStop}) : super(key: key);
-
   @override
-  State<_AudioRecorder> createState() => _AudioRecorderState();
+  _AudioRecorderState createState() => _AudioRecorderState();
+  @override
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
+    super.debugFillProperties(properties);
+    properties.add(
+        ObjectFlagProperty<void Function(String path)>.has('onStop', onStop));
+  }
 }
 
-class _AudioRecorderState extends State<_AudioRecorder> {
+class _AudioRecorderState extends State<AudioRecorder> {
+  bool _isRecording = false;
+  bool _isPaused = false;
   int _recordDuration = 0;
   Timer? _timer;
-  late final AudioRecorder _audioRecorder;
-  StreamSubscription<RecordState>? _recordSub;
-  RecordState _recordState = RecordState.stop;
-  StreamSubscription<Amplitude>? _amplitudeSub;
+  Timer? _ampTimer;
+  final FlutterSoundRecord _audioRecorder = FlutterSoundRecord();
   Amplitude? _amplitude;
-
-  late AzureSpeechAssessment _speechAzure;
-  String subKey = "1ae61ffbb49243e58cba2b322565d80f";
-  String region = "eastus";
-  String lang = "en-US";
-  String timeout = "2000";
 
   @override
   void initState() {
-    _audioRecorder = AudioRecorder();
-
-    _speechAzure = new AzureSpeechAssessment();
-
-    activateSpeechRecognizer();
-
-    _recordSub = _audioRecorder.onStateChanged().listen((recordState) {
-      _updateRecordState(recordState);
-    });
-
-    _amplitudeSub = _audioRecorder
-        .onAmplitudeChanged(const Duration(milliseconds: 300))
-        .listen((amp) {
-      setState(() => _amplitude = amp);
-    });
-
+    _isRecording = false;
     super.initState();
   }
 
-  void activateSpeechRecognizer() {
-    // MANDATORY INITIALIZATION
-    AzureSpeechAssessment.initialize(subKey, region,
-        lang: lang, timeout: timeout);
-
-    _speechAzure.setFinalTranscription((text) {
-      // do what you want with your final transcription
-      debugPrint("Setting final transcript");
-      setState(() {
-        debugPrint("Setting final transcript: $text");
-      });
-    });
-
-    _speechAzure.setFinalAssessment((text) {
-      // do what you want with your final transcription
-      debugPrint("Setting final assessment");
-      setState(() {
-        debugPrint("Setting final assessment: $text");
-      });
-    });
-
-    _speechAzure.setRecognitionStartedHandler(() {
-      // called at the start of recognition (it could also not be used)
-      debugPrint("Recognition started");
-    });
-  }
-
-  Future<void> _start() async {
-    try {
-      if (await _audioRecorder.hasPermission()) {
-        const encoder = AudioEncoder.wav;
-
-        // We don't do anything with this but printing
-        final isSupported = await _audioRecorder.isEncoderSupported(
-          encoder,
-        );
-
-        debugPrint('${encoder.name} supported: $isSupported');
-
-        final devs = await _audioRecorder.listInputDevices();
-        debugPrint(devs.toString());
-
-        const config = RecordConfig(encoder: encoder, numChannels: 1);
-
-        // Record to file
-        String path;
-        if (kIsWeb) {
-          path = '';
-        } else {
-          final dir = await getApplicationDocumentsDirectory();
-          path = p.join(
-            dir.path,
-            'audio_${DateTime.now().millisecondsSinceEpoch}.wav',
-          );
-          debugPrint('Audio path: $path');
-        }
-        await _audioRecorder.start(config, path: path);
-
-        // Record to stream
-        // final file = File(path);
-        // final stream = await _audioRecorder.startStream(config);
-        // stream.listen(
-        //   (data) {
-        //     // ignore: avoid_print
-        //     print(
-        //       _audioRecorder.convertBytesToInt16(Uint8List.fromList(data)),
-        //     );
-        //     file.writeAsBytesSync(data, mode: FileMode.append);
-        //   },
-        //   // ignore: avoid_print
-        //   onDone: () => print('End of stream'),
-        // );
-
-        _recordDuration = 0;
-
-        _startTimer();
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print(e);
-      }
-    }
-  }
-
-  Future<void> _stop() async {
-    final path = await _audioRecorder.stop();
-
-    if (path != null) {
-      widget.onStop(path);
-    }
-  }
-
-  Future<void> _pause() => _audioRecorder.pause();
-
-  Future<void> _resume() => _audioRecorder.resume();
-
-  void _updateRecordState(RecordState recordState) {
-    setState(() => _recordState = recordState);
-
-    switch (recordState) {
-      case RecordState.pause:
-        _timer?.cancel();
-        break;
-      case RecordState.record:
-        _startTimer();
-        break;
-      case RecordState.stop:
-        _timer?.cancel();
-        _recordDuration = 0;
-        break;
-    }
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _ampTimer?.cancel();
+    _audioRecorder.dispose();
+    super.dispose();
   }
 
   @override
@@ -175,7 +54,7 @@ class _AudioRecorderState extends State<_AudioRecorder> {
       home: Scaffold(
         body: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: [
+          children: <Widget>[
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
@@ -186,7 +65,7 @@ class _AudioRecorderState extends State<_AudioRecorder> {
                 _buildText(),
               ],
             ),
-            if (_amplitude != null) ...[
+            if (_amplitude != null) ...<Widget>[
               const SizedBox(height: 40),
               Text('Current: ${_amplitude?.current ?? 0.0}'),
               Text('Max: ${_amplitude?.max ?? 0.0}'),
@@ -197,24 +76,15 @@ class _AudioRecorderState extends State<_AudioRecorder> {
     );
   }
 
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _recordSub?.cancel();
-    _amplitudeSub?.cancel();
-    _audioRecorder.dispose();
-    super.dispose();
-  }
-
   Widget _buildRecordStopControl() {
     late Icon icon;
     late Color color;
 
-    if (_recordState != RecordState.stop) {
+    if (_isRecording || _isPaused) {
       icon = const Icon(Icons.stop, color: Colors.red, size: 30);
       color = Colors.red.withOpacity(0.1);
     } else {
-      final theme = Theme.of(context);
+      final ThemeData theme = Theme.of(context);
       icon = Icon(Icons.mic, color: theme.primaryColor, size: 30);
       color = theme.primaryColor.withOpacity(0.1);
     }
@@ -225,7 +95,7 @@ class _AudioRecorderState extends State<_AudioRecorder> {
         child: InkWell(
           child: SizedBox(width: 56, height: 56, child: icon),
           onTap: () {
-            (_recordState != RecordState.stop) ? _stop() : _start();
+            _isRecording ? _stop() : _start();
           },
         ),
       ),
@@ -233,18 +103,18 @@ class _AudioRecorderState extends State<_AudioRecorder> {
   }
 
   Widget _buildPauseResumeControl() {
-    if (_recordState == RecordState.stop) {
+    if (!_isRecording && !_isPaused) {
       return const SizedBox.shrink();
     }
 
     late Icon icon;
     late Color color;
 
-    if (_recordState == RecordState.record) {
+    if (!_isPaused) {
       icon = const Icon(Icons.pause, color: Colors.red, size: 30);
       color = Colors.red.withOpacity(0.1);
     } else {
-      final theme = Theme.of(context);
+      final ThemeData theme = Theme.of(context);
       icon = const Icon(Icons.play_arrow, color: Colors.red, size: 30);
       color = theme.primaryColor.withOpacity(0.1);
     }
@@ -255,7 +125,7 @@ class _AudioRecorderState extends State<_AudioRecorder> {
         child: InkWell(
           child: SizedBox(width: 56, height: 56, child: icon),
           onTap: () {
-            (_recordState == RecordState.pause) ? _resume() : _pause();
+            _isPaused ? _resume() : _pause();
           },
         ),
       ),
@@ -263,11 +133,11 @@ class _AudioRecorderState extends State<_AudioRecorder> {
   }
 
   Widget _buildText() {
-    if (_recordState != RecordState.stop) {
+    if (_isRecording || _isPaused) {
       return _buildTimer();
     }
 
-    return const Text("Waiting to record");
+    return const Text('Waiting to record');
   }
 
   Widget _buildTimer() {
@@ -289,25 +159,94 @@ class _AudioRecorderState extends State<_AudioRecorder> {
     return numberStr;
   }
 
+  Future<void> _start() async {
+    try {
+      if (await _audioRecorder.hasPermission()) {
+        await _audioRecorder.start();
+
+        bool isRecording = await _audioRecorder.isRecording();
+        setState(() {
+          _isRecording = isRecording;
+          _recordDuration = 0;
+        });
+
+        _startTimer();
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print(e);
+      }
+    }
+  }
+
+  Future<void> _stop() async {
+    _timer?.cancel();
+    _ampTimer?.cancel();
+    final String? path = await _audioRecorder.stop();
+
+    widget.onStop(path!);
+
+    setState(() => _isRecording = false);
+  }
+
+  Future<void> _pause() async {
+    _timer?.cancel();
+    _ampTimer?.cancel();
+    await _audioRecorder.pause();
+
+    setState(() => _isPaused = true);
+  }
+
+  Future<void> _resume() async {
+    _startTimer();
+    await _audioRecorder.resume();
+
+    setState(() => _isPaused = false);
+  }
+
   void _startTimer() {
     _timer?.cancel();
+    _ampTimer?.cancel();
 
     _timer = Timer.periodic(const Duration(seconds: 1), (Timer t) {
       setState(() => _recordDuration++);
     });
+
+    _ampTimer =
+        Timer.periodic(const Duration(milliseconds: 200), (Timer t) async {
+      _amplitude = await _audioRecorder.getAmplitude();
+      setState(() {});
+    });
   }
+}
+
+Future<String> convertM4aToWav(String inputPath) async {
+  String outputPath = inputPath.replaceAll(".m4a", ".wav");
+  await FFmpegKit.execute(
+          "-i $inputPath -acodec pcm_s16le -ar 44100 $outputPath")
+      .then((session) async {
+    final duration = await session.getDuration();
+    print("Convert m4a to wav duration: $duration");
+  });
+
+  return outputPath;
+}
+
+void main() {
+  runApp(const MyApp());
 }
 
 class MyApp extends StatefulWidget {
   const MyApp({Key? key}) : super(key: key);
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  _MyAppState createState() => _MyAppState();
 }
 
 class _MyAppState extends State<MyApp> {
   bool showPlayer = false;
-  String? audioPath;
+  String stringPath = '';
+  ap.AudioSource? audioSource;
 
   @override
   void initState() {
@@ -324,23 +263,32 @@ class _MyAppState extends State<MyApp> {
               ? Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 25),
                   child: AudioPlayer(
-                    source: audioPath!,
+                    source: audioSource!,
+                    stringPath: stringPath,
                     onDelete: () {
                       setState(() => showPlayer = false);
                     },
                   ),
                 )
-              : _AudioRecorder(
-                  onStop: (path) {
-                    if (kDebugMode) print('Recorded file path: $path');
-                    setState(() {
-                      audioPath = path;
-                      showPlayer = true;
-                    });
+              : AudioRecorder(
+                  onStop: (String path) async {
+                    audioSource = ap.AudioSource.uri(Uri.parse(path));
+                    String wavPath = await convertM4aToWav(path);
+                    stringPath = wavPath;
+                    showPlayer = true;
+                    setState(() {});
                   },
                 ),
         ),
       ),
     );
+  }
+
+  @override
+  void debugFillProperties(DiagnosticPropertiesBuilder properties) {
+    super.debugFillProperties(properties);
+    properties.add(DiagnosticsProperty<bool>('showPlayer', showPlayer));
+    properties
+        .add(DiagnosticsProperty<ap.AudioSource?>('audioSource', audioSource));
   }
 }

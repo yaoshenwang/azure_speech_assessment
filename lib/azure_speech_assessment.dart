@@ -188,6 +188,21 @@ class AzureSpeechAssessment {
     }
   }
 
+  static soundRecordAssessment(String path, String originalText) {
+    if ((_subKey != null && _region != null)) {
+      _channel.invokeMethod('soundRecordAssessment', {
+        'language': _lang,
+        'subscriptionKey': _subKey,
+        'region': _region,
+        'timeout': _timeout,
+        'path': path,
+        'originalText': originalText
+      });
+    } else {
+      throw "Error: SpeechRecognitionParameters not initialized correctly";
+    }
+  }
+
   /// Speech recognition that return text while still recognizing
   /// Return the text obtained or the error catched
 
