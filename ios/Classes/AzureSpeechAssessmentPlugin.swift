@@ -57,9 +57,8 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
             let lang = args?["language"] ?? ""
             let timeoutMs = args?["timeout"] ?? ""
             let path = args?["path"] ?? ""
-            let originalText = args?["originalText"] ?? ""
-            print("Called soundRecord \(speechSubscriptionKey) \(serviceRegion) \(lang) \(timeoutMs) \(path) \(originalText)")
-            soundRecordAssessment(speechSubscriptionKey: speechSubscriptionKey, serviceRegion: serviceRegion, lang: lang, timeoutMs: timeoutMs, path: path, originalText: originalText)
+            print("Called soundRecord \(speechSubscriptionKey) \(serviceRegion) \(lang) \(timeoutMs) \(path)")
+            soundRecordAssessment(speechSubscriptionKey: speechSubscriptionKey, serviceRegion: serviceRegion, lang: lang, timeoutMs: timeoutMs, path: path)
         } else if (call.method == "speakText") {
             let text = args?["text"] ?? ""
             let speechSubscriptionKey = args?["subscriptionKey"] ?? ""
@@ -297,7 +296,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         
     }
 
-    public func soundRecordAssessment(speechSubscriptionKey : String, serviceRegion : String, lang: String, timeoutMs: String, path: String , originalText: String) {
+    public func soundRecordAssessment(speechSubscriptionKey : String, serviceRegion : String, lang: String, timeoutMs: String, path: String) {
         var speechConfig: SPXSpeechConfiguration?
         do {
             try speechConfig = SPXSpeechConfiguration(subscription: speechSubscriptionKey, region: serviceRegion)
@@ -308,7 +307,7 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         speechConfig?.speechRecognitionLanguage = lang
         speechConfig?.setPropertyTo(timeoutMs, by: SPXPropertyId.speechSegmentationSilenceTimeoutMs)
         
-        var referenceText: String = originalText;
+        var referenceText: String = "";
         var pronunciationAssessmentConfig: SPXPronunciationAssessmentConfiguration?
         do {
             try pronunciationAssessmentConfig = SPXPronunciationAssessmentConfiguration.init(
@@ -333,6 +332,8 @@ public class AzureSpeechAssessmentPlugin: NSObject, FlutterPlugin {
         print("Giving Assessment...")
         
         let result = try! reco.recognizeOnce()
+
+        pronunciationAssessmentConfig?.referenceText = result.text;
         
         let pronunciationAssessmentResultJson = result.properties?.getPropertyBy(SPXPropertyId.speechServiceResponseJsonResult)
         print("pronunciationAssessmentResultJson: \(pronunciationAssessmentResultJson ?? "(no result)")")

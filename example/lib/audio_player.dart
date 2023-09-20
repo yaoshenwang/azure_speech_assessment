@@ -295,16 +295,14 @@ class AudioPlayerState extends State<AudioPlayer> {
   Future<void> _getAssessmentScore(String originalText) async {
     //防止用户未暂停，先提前暂停
     _audioPlayer.pause();
-    print("originalText: $originalText");
 
     if (Platform.isAndroid) {
       //发送录音
-      AzureSpeechAssessment.soundRecordAssessment(
-          widget.stringPath!, originalText);
+      AzureSpeechAssessment.soundRecordAssessment(widget.stringPath!);
     } else if (Platform.isIOS) {
       //发送录音
       AzureSpeechAssessment.soundRecordAssessment(
-          widget.stringPath!.substring(7), originalText);
+          widget.stringPath!.substring(7));
     }
 
     //_audioPlayer.stop().then((value) => widget.onDelete());
