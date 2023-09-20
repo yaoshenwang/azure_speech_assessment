@@ -188,7 +188,7 @@ class AzureSpeechAssessment {
     }
   }
 
-  static soundRecordAssessment(String path, String originalText) {
+  static soundRecordAssessment(String path) {
     if ((_subKey != null && _region != null)) {
       _channel.invokeMethod('soundRecordAssessment', {
         'language': _lang,
@@ -196,7 +196,6 @@ class AzureSpeechAssessment {
         'region': _region,
         'timeout': _timeout,
         'path': path,
-        'originalText': originalText
       });
     } else {
       throw "Error: SpeechRecognitionParameters not initialized correctly";

@@ -199,10 +199,9 @@ public class AzureSpeechAssessmentPlugin : FlutterPlugin, Activity(), MethodCall
           val lang: String = "" + call.argument("language");
           val timeoutMs: String = "" + call.argument("timeout");
           val path: String = "" + call.argument("path");
-          val originalText: String = "" + call.argument("originalText");
           print("soundRecord called");
 
-          soundRecordAssessment(speechSubscriptionKey, serviceRegion, lang, timeoutMs, path, originalText);
+          soundRecordAssessment(speechSubscriptionKey, serviceRegion, lang, timeoutMs, path);
           result.success(true);
 
         }
@@ -810,8 +809,7 @@ public class AzureSpeechAssessmentPlugin : FlutterPlugin, Activity(), MethodCall
     serviceRegion: String,
     lang: String,
     timeoutMs: String,
-    path: String,
-    originalText: String
+    path: String
 ) {
   // 创建用于日志输出的标签
   val logTag: String = "soundRecordAssessment"
@@ -856,8 +854,11 @@ public class AzureSpeechAssessmentPlugin : FlutterPlugin, Activity(), MethodCall
     // 等待语音识别操作完成，并在语音识别完成后执行回调函数
     setOnTaskCompletedListener(task) { result ->
 
+      // 获取语音识别结果
+      val s = result.text
+
       // 将语音识别结果传递给语音评估对象
-      pronunciationAssessmentConfig.referenceText = originalText
+      pronunciationAssessmentConfig.referenceText = s
 
       // 获取语音评估结果
       val pronunciationAssessmentResultJson =
